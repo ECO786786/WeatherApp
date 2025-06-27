@@ -2,6 +2,11 @@
 // This provides a starting point for your homework assignment
 
 // These types are incomplete - you'll need to flesh them out!
+enum TemperatureUnit {
+  Celsius = "C",
+  Fahrenheit = "F",
+}
+
 interface Coordinates {
   lat: number;
   lon: number;
@@ -28,6 +33,54 @@ interface WeatherReport {
   timestamp: string;
 }
 
+interface WeatherReport {
+  location: Location;
+  weather: Weather;
+  summary: string;
+  timestamp: string;
+  unit: TemperatureUnit;
+}
+
+class WeatherAppError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WeatherAppError";
+    Object.setPrototypeOf(this, WeatherAppError.prototype);
+  }
+}
+
+class LocationError extends WeatherAppError {
+  constructor(message: string) {
+    super(message);
+    this.name = "LocationError";
+    Object.setPrototypeOf(this, LocationError.prototype);
+  }
+}
+
+class WeatherDataError extends WeatherAppError {
+  constructor(message: string) {
+    super(message);
+    this.name = "WeatherDataError";
+    Object.setPrototypeOf(this, WeatherDataError.prototype);
+  }
+}
+
+class InvalidInputError extends WeatherAppError {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidInputError";
+    Object.setPrototypeOf(this, InvalidInputError.prototype);
+  }
+}
+
+function convertTemperature(value: number, toUnit: TemperatureUnit): number {
+  if (toUnit === TemperatureUnit.Fahrenheit) {
+    return (value * 9) / 5 + 32;
+  } else {
+    return ((value - 32) * 5) / 9;
+  }
+}
+
 // Simulated API functions - Convert these to TypeScript with proper types
 // Replace callbacks with Promise-based implementations
 
@@ -37,7 +90,7 @@ function getUserLocation(userId: number): Promise<Location> {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       if (userId < 0) {
-        reject(new Error("Invalid user ID"));
+        reject(new InvalidInputError("User ID must be a non-negative number."));
         return;
       }
 
@@ -59,11 +112,12 @@ function getUserLocation(userId: number): Promise<Location> {
         },
       };
 
-      const location = locations[userId] || {
-        city: "Unknown City",
-        country: "Unknown Country",
-        coordinates: { lat: 0, lon: 0 },
-      };
+      const location = locations[userId];
+
+      if (!location) {
+        reject(new LocationError(`No location found for user ID ${userId}.`));
+        return;
+      }
 
       resolve(location);
     }, 1000);
@@ -79,7 +133,7 @@ function getWeatherData(coordinates: Coordinates): Promise<Weather> {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
       if (lat === 0 && lon === 0) {
-        reject(new Error("Invalid coordinates"));
+        reject(new WeatherDataError("Invalid coordinates"));
         return;
       }
 
@@ -104,23 +158,48 @@ function getWeatherData(coordinates: Coordinates): Promise<Weather> {
 }
 
 // Implement the async/await version of getWeatherReport
-async function getWeatherReport(userId: number): Promise<WeatherReport> {
+async function getWeatherReport(
+  userId: number,
+  unit: TemperatureUnit = TemperatureUnit.Celsius
+): Promise<WeatherReport> {
   try {
     const location = await getUserLocation(userId);
-
     const weatherData = await getWeatherData(location.coordinates);
 
-    const report: WeatherReport = {
-      location: location,
-      weather: weatherData,
-      summary: `The weather in ${location.city} is ${weatherData.conditions} with a temperature of ${weatherData.temperature}°C and ${weatherData.humidity}% humidity.`,
+    const convertedTemperature =
+      unit === TemperatureUnit.Celsius
+        ? weatherData.temperature
+        : convertTemperature(
+            weatherData.temperature,
+            TemperatureUnit.Fahrenheit
+          );
+
+    const summary = `The weather in ${location.city} is ${
+      weatherData.conditions
+    } with a temperature of ${convertedTemperature.toFixed(1)}°${unit} and ${
+      weatherData.humidity
+    }% humidity.`;
+
+    return {
+      location,
+      weather: {
+        ...weatherData,
+        temperature: convertedTemperature,
+      },
+      summary,
       timestamp: new Date().toISOString(),
+      unit,
     };
-
-    return report;
   } catch (error) {
-    console.error("Error getting weather report:", error);
-
+    if (error instanceof LocationError) {
+      console.error("Location Error:", error.message);
+    } else if (error instanceof WeatherDataError) {
+      console.error("Weather Data Error:", error.message);
+    } else if (error instanceof InvalidInputError) {
+      console.error("Invalid Input:", error.message);
+    } else {
+      console.error("Unknown Error:", error);
+    }
     throw error;
   }
 }
@@ -128,12 +207,15 @@ async function getWeatherReport(userId: number): Promise<WeatherReport> {
 // Test the function
 async function main() {
   try {
-    console.log("Starting weather report generation...");
-    const report = await getWeatherReport(1);
+    console.log("Starting weather report generation (Celsius)...");
+    const reportC = await getWeatherReport(1, TemperatureUnit.Celsius);
+    console.log("\nWeather Report (Celsius):");
+    console.log(reportC.summary);
 
-    console.log("\nWeather Report:");
-    console.log(report.summary);
-    console.log("\nFull report details:", report);
+    console.log("\nStarting weather report generation (Fahrenheit)...");
+    const reportF = await getWeatherReport(1, TemperatureUnit.Fahrenheit);
+    console.log("\nWeather Report (Fahrenheit):");
+    console.log(reportF.summary);
   } catch (error) {
     console.error("Error getting weather report:", error);
   }
